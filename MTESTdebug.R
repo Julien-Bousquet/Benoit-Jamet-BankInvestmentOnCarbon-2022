@@ -66,6 +66,11 @@ devtools::document('monpackage'); library(monpackage)
 # test à 2 groupes appariés
 k1 <- 50; k2 <- 50 ; M.test(x=rnorm(k1+k2), g=rep(1:2, c(k1,k2)),paired=TRUE) -> L;L
 
+# Test de chargement de la librairie
+#  Julien-Bousquet /Benoit-Jamet-BankInvestmentOnCarbon-2022 
+devtools::install_github('Julien-Bousquet/Benoit-Jamet-BankInvestmentOnCarbon-2022')
+
+
 #tests non paired goupes
 k1 <- 50; k2 <- 102 ; 
 M.test(x=c(rnorm(k1),rnorm(k2,4,5)), g=rep(c('A','B'), c(k1,k2))) -> L; L	
