@@ -2,4 +2,6 @@
 
 export(M.test)
 export(ind.median)
+export(lms.to.table)
+export(star)
 export(wilcoxon.cut.test)

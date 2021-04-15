@@ -19,7 +19,8 @@ Imports:
     foreach, 
     normtest,
     lawstat,
-    WRS2
+    WRS2,
+    broom
 Suggests:
     dplyr,
     parallel

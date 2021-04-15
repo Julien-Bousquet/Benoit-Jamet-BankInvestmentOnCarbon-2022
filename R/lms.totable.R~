@@ -1,0 +1,35 @@
+
+#' Compare two halves of a population by Wilcoxon test.
+#' 
+#'  Test the global efficiency of an index (group) on a mesure. 
+#' This function is use in B. Jamet -- (2022) to show the efficiency of different banks 
+#' informations product by ONG on  reals financial information (see examples).
+#'
+#' @author Julien Bousquet (2021)
+#' @param x vector of names of the columns to test in data, or dataframe of the vectors to test, or  a name of data column
+#' @param group a vector of values, or the name or the number of the column  variable in data to use to cut x : a vector with 2 values or a quantitative vector, with same length than x.
+#' @param data data.frame with the data.
+#' @param prop proportion of values excluded around the median of group. Make sense only if group is numerical, not factorial.
+#' @param verbose if TRUE, always print the  wilcox.test(), if verbose=F print the result only if  p-value < 0.05
+#' @param bootstrap  0 if no bootstrap, number of  bootstrap, only pertient on qualitative groups, not on a 2-values  group vector.
+#' @param seed  NULL, an integer random seed for reproductibility of bootstrap.
+#' @return a dataframe with wilcoxon p-values, or with confidence intervall of p-values, if bootstraped. 
+#' Note that a p value is always positive. Here, the minus sign in front of a negative p-value means that the 
+#' index (in group) is in the opposite order with x.
+#'  
+#' @details `wilcoxon.cut.test()` take the `group` vector and cut it in two halves around the median. 
+#' This group vector may be numerical or factorial with 2 levels. 
+#' A proportion prop= of data around the median may be possibly 
+#' excluded. The two remaining samples of data in  `x`, associated  for  lower an upper parts of the group 
+#' are passed to the test of Wilcoxon to compare their median. This allow us to validate the efficiency of the 
+#' index `group` on the measured `x` tendency.
+#'
+#' @examples # Call with names of columns of dataframe
+#' wilcoxon.cut.test(x=c('FEF1','FEF'), group='FEF2', data=X) 
+#' # Call with numbers of columns 
+#' wilcoxon.cut.test(x=2:4, group='FEF2', data=X, prop=0.2, boot=50) 
+#' # Call data with vectors and data.frame :
+#' wilcoxon.cut.test(X[,2:3], group=X$FEF2, prop=0.1)
+#'
+#' @export
+
