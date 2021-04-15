@@ -1,7 +1,9 @@
-#' A fonction that transforms pvalues in stars ***
+#' A function that transforms pvalues in stars ***
+#'
 #' @author Julien Bousquet (2021)
 #' @param p.val the value of the pvalue.
 #' @return A character string with stars, dot or blank space.
+#'
 #' @export
 star <- function(p.val){ 
   p.val <- abs(p.val)

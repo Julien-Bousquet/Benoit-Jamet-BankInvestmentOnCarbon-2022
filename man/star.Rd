@@ -2,7 +2,7 @@
 % Please edit documentation in R/star.R
 \name{star}
 \alias{star}
-\title{A fonction that transforms pvalues in stars ***}
+\title{A function that transforms pvalues in stars ***}
 \usage{
 star(p.val)
 }
@@ -13,7 +13,7 @@ star(p.val)
 A character string with stars, dot or blank space.
 }
 \description{
-A fonction that transforms pvalues in stars ***
+A function that transforms pvalues in stars ***
 }
 \author{
 Julien Bousquet (2021)
