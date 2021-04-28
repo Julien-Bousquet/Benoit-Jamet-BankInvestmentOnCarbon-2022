@@ -225,7 +225,7 @@ wilcoxon.cut.test <- function(x,
                             group.by=group.name, 
                              p.value.50=q[1],
                             p.value.95=q[2],
-                            p.value=pval[ which.min(abs(abs(pval)-q[2])) ],#minimize the distance between pval and quantile
+                            p.value=pval[ which.min(abs(abs(pval)-q[2])) ][1],#minimize the distance between pval and quantile
                             star=star(q[2])
                             )
           return(DF) 
