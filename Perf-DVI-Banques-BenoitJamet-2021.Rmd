@@ -1,0 +1,586 @@
+---
+title: "R Notebook"
+output:
+  pdf_document:
+    toc: yes
+    number_sections: yes
+  html_document:
+    toc: yes
+    number_sections: yes
+    df_print: paged
+  word_document:
+    toc: yes
+---
+# Paramétrage de la session
+```{r}
+setwd('/home/julien1/Documents/BenoitBankMondial')
+```
+Option de mise en cache des chunks
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Chargement des librairies
+```{r}
+library(foreach)
+library( )
+library(openxlsx) #pour la lecture des fichiers excels
+library(foreach)
+library(leaps)  # pour  la sélection de modèles
+library(magrittr)
+#install.packages('kableExtra')
+#library(kableExtra)
+```
+
+## Chargement des données
+```{r}
+X <- read.xlsx("BDD_DEF_10mars2021++_2.xlsx", colNames=TRUE, rowNames = F, sheet=2)
+X.all <- read.xlsx("BDD_DEF_10mars2021++_2.xlsx", colNames=TRUE, rowNames = F, sheet=1)
+X.eur <- read.xlsx("BDD_DEF_10mars2021++_2.xlsx", colNames=TRUE, rowNames = F, sheet=6)
+X.noneur <- read.xlsx("BDD_DEF_10mars2021++_2.xlsx", colNames=TRUE, rowNames = F, sheet=7)
+X.grandes <- read.xlsx("BDD_DEF_10mars2021++_2.xlsx", colNames=TRUE, rowNames = F,
+                       sheet=10)
+X.petites <- read.xlsx("BDD_DEF_10mars2021++_2.xlsx", colNames=TRUE, rowNames = F,
+                       sheet=11)
+
+
+#list.files()
+```
+
+
+## Fonctions
+### de bootstrap
+Définition d'une fonction de bootstrap qui affiche les valeurs de coefficients, les intervalles de confiance bilatéraux à 95% des coefficients de la régression dans Estim_2.5 et Estim_97.5 , la pval de la reg unique, le pval_90 maximum avec son quantile à 90%. Affiche aussi le r2 ajusté minimum quantile à 5% et le r2 ajusté médian.
+```{r}
+bootstrap <- function(f, data, boot=500){
+cat('-----------------------------------------\n')
+cat('Regression : ');print(f)
+  sss <- summary(lm(formula = f, data=data))
+  reg.coeff <- sss$coefficients[,c(1,4)]
+  nvars <- length(attr(terms(f),"term.labels"))+1 # nb de variables dans le modèle, avec intercept
+  foreach(i=1:boot,.combine=cbind)%do%{
+  ind.boot <- sample(1:nrow(X), replace=T)
+  reg <- lm(formula = f, data=X[ind.boot,])
+  ss <- summary(reg)
+  c(    ss$coefficients[,1],  # récupère la valeur des coeffs
+        r2.adj = ss$adj.r.squared,  # récupère le r carré ajusté
+        ss$coefficients[,c(4)] # récupère la p.value de chaque coef
+    )
+}-> pvals.full # tableau des 500 coef, pvaleurs et r2 adj de tous les coeffs et de chaque modèle
+pvals_0.9 <- apply(
+  pvals.full[(nrow(pvals.full)-nvars+1):nrow(pvals.full),],
+  1, 
+  quantile, probs=c(0.9)
+  ) # pvals de chaque coef de chaque variable
+Estim_2.5 <- apply(
+  pvals.full[1:nvars, ],
+  1, 
+  quantile, probs=c(0.025)
+  )
+Estim_97.5 <- apply(
+  pvals.full[1:nvars, ],
+  1, 
+  quantile, probs=c(0.975)
+  )
+  
+print(data.frame(
+      Estim= round(reg.coeff[,1],2), 
+      pval = round(reg.coeff[,2],4), 
+      stars = star(reg.coeff[,2]), 
+      Estim_2.5 = round(Estim_2.5,2),
+      Estim_97.5 = round(Estim_97.5,2), 
+      pval_90 = round(pvals_0.9,4),
+      stars_90 = star(pvals_0.9)
+    )
+  )
+
+ #print(reg.coeff)
+  r2.adj.boot <- quantile(pvals.full[nvars+1, ], probs=c(0.05,0.5))
+  cat(" r2 ajusté :\t", 
+      sss$adj.r.squared ,
+      "\t quantile 5% =",
+      r2.adj.boot[1],
+      " \t quantile 50% =",
+      r2.adj.boot[2],"\n")
+}
+```
+ 
+### de sélection de modèles
+Fonction de sélection de variables dans les modèles
+```{r}
+select.lm <- function(formula, data, nvmax=7 ){
+  verbose=FALSE
+  cat('--------------------------------------------\n')
+  cat('Regression : '); print(formula)
+
+  selection <- regsubsets(x=formula, data=data, nvmax=nvmax, method='forward') # dans leaps
+  if(verbose)print(selection)
+  summary(selection) ->  selection.summary
+  #  selection.summary # pour afficher
+
+  for(crit in c('bic','adjr2','cp')){
+    cat('Selected by ',crit,'\t -------------------\n')
+    num.var <- which.min(selection.summary[[crit]]) # min bic et cp
+    # mais max pour le r2 ajusté
+        if(crit=='adjr2')num.var <- which.max(selection.summary[[crit]]) 
+    #coef(selection, num.var) # print names of selected vars and their coef
+    xvars <-  paste(names(coef(selection,num.var))[-1],collapse='+')
+    if(verbose)print(xvars)
+    reg.formula <- formula(paste(y,'~',xvars))
+    if(verbose)print(reg.formula)
+
+    # Re-adjust the linear model
+    reg.leaps <- lm(reg.formula, data=data)
+    # and print the informations
+    if(verbose)print(summary(reg.leaps))
+  
+    print(cbind(
+        summary(reg.leaps)$coefficients[,c(1,4)]%>%round(4) ,
+        star=star(summary(reg.leaps)$coefficients[,c(4)])
+        ), quote=FALSE
+    )
+    cat('adj.r.squared = ',broom::glance(reg.leaps)[['adj.r.squared']],'     p.value = ',broom::glance(reg.leaps)[['p.value']], '\n\n')
+  }  
+}  
+```
+
+```{r}
+# A VERIFIER
+ #select.lm(CDP ~ CEF + EPI + Taille + Croiss + Année+EUR, data=X.eur, nvmax=7) 
+```
+
+
+# Stats descriptives (+ outils Antoine)
+## Paramètres statistiques
+```{r}
+k=8
+library(foreach)
+#summary(X[,-(1:6)])
+foreach(k=7:ncol(X), .combine=rbind)%do%{
+  c(colnames(X)[k],
+     as.vector(round(summary(X[,k]),2))[1:6], 
+     round(sd(X[,k], na.rm=T),2) )
+  
+} -> stat.summary
+ncol(stat.summary)
+colnames(stat.summary) <- c('Variable','Min','1st Q', 'Median', 'Mean', '3rd Q','Max','SD')
+rownames(stat.summary) <- NULL
+as.data.frame(stat.summary)
+
+```
+
+
+# Tests Wilcoxon
+## Loading package of the article on github
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(devtools)
+#devtools::install_github('Julien-Bousquet/Benoit-Jamet-BankInvestmentOnCarbon-2022', force=TRUE) # installation seulement si nécessaire
+library(monpackage) #load package of the github
+```
+
+
+## Bootstraped Wilcoxon tests 
+```{r}
+set.seed(1)
+names(X)
+VARS <- c( 'FEF','CEF','CDP', 'GRI','ECLc', 'EPI', 'Taille', 'Croiss', 'Renta','ERSEc')
+b <- 500 # Nombre de ré-échantillonnages dans le bootstrap (0=pas de bootstrap)
+p <- 0
+
+GROUPS <- c('FEF','CEF','CDP','ECLc','GRI','ERSEc','Taille','EUR','EPI')
+
+library(foreach)
+foreach(g = GROUPS, .combine=rbind, packages='foreach')%do%{
+  wilcoxon.cut.test(x=VARS, group=g, bootstrap=b, prop=p, data=X)
+}-> AnalyseWilcoxonComplete
+AnalyseWilcoxonComplete
+
+write.csv(AnalyseWilcoxonComplete, 
+          file='AnalyseWilcoxonComplete.csv', 
+          row.names = FALSE)
+
+foreach(g = GROUPS, .combine=rbind)%do%{
+  wilcoxon.cut.test(x=VARS, group=g, bootstrap=b, prop=0.2, data=X)
+}-> AnalyseWilcoxonComplete
+AnalyseWilcoxonComplete
+
+write.csv(AnalyseWilcoxonComplete, 
+          file='AnalyseWilcoxonComplete20pc.csv', 
+          row.names = FALSE)
+```
+
+
+# Corrélations
+FEF; CEF; CDP; GRI; ERSEc; ECLc; EPI; Taille; Croiss; Renta
+
+```{r}
+library(corrplot)
+#X[,c('FEF','CEF','CDP','GRI','ERSEc','ECLc','EPI','Taille','Croiss','Renta')]
+
+M <- cor(X[,c('FEF','CEF','CDP','GRI','ERSEc','ECLc','EPI','Taille','Croiss','Renta')], use='pairwise.complete.obs')
+
+corrplot(M, )
+```
+
+```{r}
+devtools::install_github("Antoine-Masse/KefiR") # pour corrigraph
+
+library(KefiR)
+# Fonction en cours de développement pour Rstudio :
+# fonctionne dans Rgui uniquement
+# corrigraph(X[,c('FEF','CEF','CDP','GRI','ERSEc','ECLc','EPI','Taille','Croiss','Renta')])
+```
+
+
+# Leaps : écremage de modèle
+Ecrémage automatique pour toutes les variables, et ajustement du modèle le plus pertinent avec affichage résumé. Le mode de sélection du modèle n'impacte pas.
+
+```{r}
+for(y in c('CDP','ECLc','GRI','ERSEc')){
+  f <- formula(paste(y,'~FEF*CEF+EPI+COT+Taille+Croiss+Renta+EUR+Année'))
+ select.lm(f, data=X, nvmax=7) 
+}
+```
+
+```{r}
+selection <- regsubsets(CDP~FEF+CEF+EPI+Taille+Croiss+Renta+Année+EUR,
+                        data=X, nvmax=5, method='forward')
+summary(selection) ->  selection.summary
+  selection.summary
+plot(selection.summary$bic)
+
+coef(selection,4)
+reg1 <- lm(CDP~CEF+EPI+Année+Taille, data=X)
+summary(reg1)
+is(X)
+
+```
+
+```{r}
+set.seed(1)
+foreach(i = 1:100, .combine=rbind)%do%{
+  ind <- sample(1:nrow(X), replace=T)
+  reg <- lm(CDP~CEF+EPI+Année+Taille, data=X[ind,])
+  coef(reg)
+} -> COEF.boot
+boxplot(COEF.boot[,-1])
+abline(h=0, col='grey')
+```
+
+```{r}
+reg$coefficients
+names(summary(reg))
+summary(reg)
+
+summary(X)
+```
+
+
+
+
+```{r}
+# On détermine les meilleures variables
+pred <- paste(names(coef(selection,5))[-1], collapse="+")
+
+coef(selection,1:3)
+
+selection$which
+```
+
+
+
+# Approfondissement de la régressions sur CDP 
+```{r}
+reg.CDP <- lm(CDP~CEF+EPI+Taille+Année, data=X)
+reg.CDP.1 <- lm(CDP~FEF+CEF+EPI+Taille+Année, data=X)
+reg.CDP.2 <- lm(CDP~I(-1.26*FEF+2.66*CEF)+EPI+Taille+Année, data=X)
+
+plot(reg.CDP)
+X[c(90,18,63),1:2] # Quelques outliers
+X[63,]
+summary(reg.CDP)
+summary(reg.CDP.2) # passe de 0.30 à 0.40 en r2.adj
+```
+# Approfondissement des autres regressions 
+et valeurs extrêmes
+```{r}
+reg.ECLc <- lm(ECLc~FEF+CEF+EPI+Taille+Croiss+Renta, data=X)
+plot(reg.ECLc)
+X[c(34,18,53),1] # Quelques outliers
+```
+
+```{r}
+reg.GRI <- lm(GRI~FEF+CEF+EPI+Taille+Croiss+Renta, data=X)
+plot(reg.GRI)
+X[c(138,60,53),1] # Quelques outliers
+```
+
+```{r}
+reg.ERSEc <- lm(ERSEc~FEF+CEF+EPI+Taille+Croiss+Renta, data=X)
+plot(reg.ERSEc)
+X[c(118,83,31),1] # Quelques outliers
+```
+Y : CDP et ECLc / GRI et ERSEc
+X : FEF ou CEF ; EPI ; Taille ; Croiss ; Renta
+
+
+# Ridge regression
+## Réduire les données
+Nous devons travailler sur des données centrées réduites pour éviter que l'écrétage soit induit en erreur par des disparités d'échelles.
+
+```{r}
+X.sc <- scale(X[,c('FEF','CEF','EPI','COT','Taille','Croiss','Renta','Année','EUR')])
+Y.sc <- scale(X[,c('CDP','ECLc','GRI','ERSEc')])
+
+#names(X)
+colnames(X.sc)
+colnames(Y.sc)
+```
+## Load `glmnet` library
+```{r}
+#install.packages('glmnet')
+library(glmnet)
+```
+## Régression Ridge sur toutes les  variables Y
+
+```{r}
+for(i in 1:ncol(Y.sc)){
+cat('-------------------------------------\n')
+  
+cat("Ridge regression on variable ", colnames(Y.sc)[i],'\n')
+    # detect NA
+  which(is.na(Y.sc[,]))  -> NA.ind 
+
+# Ajustement d'elastic cv
+enet <- cv.glmnet(X.sc[-NA.ind,], Y.sc[-NA.ind,i], alpha=0) 
+
+# Fit the Ridge regression
+regenet <- glmnet(X.sc[-NA.ind,], Y.sc[-NA.ind,i], 
+                  alpha=0, # Régression ridge
+                  lambda = enet$lambda.1se)
+print(coef(regenet))
+#plot(regenet)
+}
+```
+
+## Détail : Elasticnet on CDP
+### Déterminer le $\lambda$
+```{r}
+# Found NA
+which(is.na(Y.sc[,]), arr.ind = TRUE)[,1] -> NA.CDP 
+NA.CDP
+# Fit elastic cv
+enet <- cv.glmnet(X.sc[-NA.CDP,], Y.sc[-NA.CDP,1], alpha=0.2) # manque des CDP à voir
+enet
+plot(enet)
+```
+La validation croisée nous propose un $\lambda$ optimum à 
+`r enet$lambda.1se`.
+
+###  Ajustement CDP
+On procèdera à l'ajustement avec ce `lambda`
+```{r}
+regenet <- glmnet(X.sc[-NA.CDP,], Y.sc[-NA.CDP,1], alpha=0, 
+                  lambda = enet$lambda.1se)
+coef(regenet)
+plot(regenet)
+```
+On observe un maintien de FEF et de CEF qui sont fortement colinéaires. Aussi l'introduction de CEF dans un modèle sortira automatiquement FEF, et inversement. Il est envisageable de les considérer comme une même variable, ou bien d'exclure FEF selon la méthode habituelle.
+
+Les variables COT, et les 4 dernières sont peu pertinentes.
+
+
+# Bootstrap 
+## Bootstrap sur les modèles issus de la sélection LEAPS
+Définition des modèles sélectionnés :
+```{r}
+# liste des formules
+formules <- c(paste('CDP~CEF+EPI+Taille+Croiss+Année'),
+       paste('ECLc~FEF:CEF+EPI+COT+Taille+EUR'),
+       paste('ERSEc~CEF+EUR+Année')
+)
+```
+
+
+### CDP
+Fragilité de l'année. Le reste est confirmé.
+```{r}
+set.seed(1)
+f <- formula(paste('CDP~CEF+EPI+Taille+Croiss+Année'))
+bootstrap(f, data=X)
+```
+
+
+### ECLc
+Fragilité de la cotation et de la taille. Le reste est confirmé.
+```{r}
+set.seed(1)
+f <- formula(paste('ECLc~FEF:CEF+EPI+COT+Taille+EUR'))
+bootstrap(f, data=X)
+```
+### ERSEc
+Tout est confirmé.
+```{r}
+set.seed(1)
+f <- formula(paste('ERSEc~CEF+EUR+Année'))
+bootstrap(f, data=X)
+```
+
+# EUR vs  NON EUR : 
+Comparons les régressions entre les banques EUR et non EUR.
+Le graphique suivant représente le CDP en fonction du CEF. Les couleurs représentent la taille, et la forme des points l'appartenance à l'europe ou pas : le champs d'investigation est caractérisé par les critères de tailles et d'appartenance à l'europe. 
+Dans certains sous-groupes, il est possible que la variable CEF perde de son pouvoir explicatif. 
+
+```{r}
+plot(CDP~ CEF, data=X, col=Taille, pch=EUR)
+```
+
+## Avec les formules précédentes
+```{r}
+for(frm in formules){
+  f <- formula(frm)
+  cat('-----------------------------------------\n')
+  cat('Regression : ');print(f)
+  reg.eur <- lm(formula = f, data=X.eur)
+  reg.noneur <- lm(formula = f, data=X.noneur)
+
+    print(cbind(Est.eur = round(summary(reg.eur)$coefficients[,c(1)],3),
+                pval.eu = round(summary(reg.eur)$coefficients[,c(4)],3),
+                star.eu = star( summary(reg.eur)$coefficients[,c(4)]),
+                Est.noneur  = round(summary(reg.noneur)$coefficients[,c(1)],3),
+                pval.noneur = round(summary(reg.noneur)$coefficients[,c(4)],3),
+                star.noneur = star( summary(reg.noneur)$coefficients[,c(4)])
+                ), quote=FALSE
+    )
+    
+  cat('adj.r.squared = ',broom::glance(reg.eur)[[2]],'     p.value = ',broom::glance(reg.eur)[['p.value']],'\t',
+      'adj.r.squared = ',broom::glance(reg.noneur)[[2]],'     p.value = ',broom::glance(reg.noneur)[['p.value']],'\n')
+}
+```
+## LEAPS eur
+Sélection de modèle sur les banques européennes uniquement
+```{r}
+for(y in c('CDP','ECLc','GRI','ERSEc')){
+  f <- formula(paste(y,'~CEF+EPI+COT+Taille+Croiss+Renta+Année'))
+ select.lm(f, data=X.eur, nvmax=7) 
+}
+```
+## LEAPS non eur
+```{r}
+for(y in c('CDP','ECLc','GRI','ERSEc')){
+  f <- formula(paste(y,'~CEF+EPI+COT+Taille+Croiss+Renta+Année'))
+ select.lm(f, data=X.noneur, nvmax=7) 
+}
+```
+## Formules de LEAPS
+```{r}
+formules.eur <- c(
+  ECLc ~ CEF+EPI + COT + Taille,
+  ERSEc~ CEF + EPI +  Année
+)
+
+formules.noneur <- c(
+  CDP ~ CEF + EPI + COT +Année, 
+  ECLc ~CEF+EPI+ Taille,
+  ERSEc ~ CEF +  Année
+)
+```
+
+
+
+# Petites vs  Grandes régressions 
+## Avec les formules précédentes
+```{r}
+for(frm in formules){
+  f <- formula(frm)
+  cat('-----------------------------------------\n')
+  cat('Regression : ');print(f)
+  reg.grandes <- lm(formula = f, data=X.grandes)
+  reg.petites <- lm(formula = f, data=X.petites)
+
+    print(cbind(Est.grandes = round(summary(reg.grandes)$coefficients[,c(1)],3),
+                pval.grandes = round(summary(reg.grandes)$coefficients[,c(4)],3),
+                star.grandes = star(summary(reg.grandes)$coefficients[,c(4)]),
+                Est.petites  = round(summary(reg.petites)$coefficients[,c(1)],3),
+                pval.petites = round(summary(reg.petites)$coefficients[,c(4)],3),
+                star.petites = star(summary(reg.petites)$coefficients[,c(4)])
+                ), quote=FALSE
+    )
+    
+  cat('adj.r.squared = ',broom::glance(reg.grandes)[[2]],'     p.value = ',broom::glance(reg.grandes)[['p.value']],'\t',
+      'adj.r.squared = ',broom::glance(reg.petites)[[2]],'     p.value = ',broom::glance(reg.petites)[['p.value']],'\n')
+}
+```
+## LEAPS grandes
+Sélection de modèle sur les banques européennes uniquement
+```{r}
+for(y in c('CDP','ECLc','GRI','ERSEc')){
+  f <- formula(paste(y,'~CEF+EPI+COT+Taille+Croiss+Renta+EUR+Année'))
+ select.lm(f, data=X.grandes, nvmax=7) 
+}
+```
+## LEAPS petites
+```{r}
+for(y in c('CDP','ECLc','GRI','ERSEc')){
+  f <- formula(paste(y,'~CEF+EPI+COT+Taille+Croiss+Renta+EUR+Année'))
+ select.lm(f, data=X.petites, nvmax=7) 
+}
+```
+
+## Formules de LEAPS
+```{r}
+formules.grandes <- c(
+  CDP  ~ CEF+EPI+Année , 
+  ECLc ~ CEF+EPI+COT+EUR,
+  ERSEc~ CEF+EUR+Année 
+)
+
+formules.petites <- c(
+  CDP ~ CEF+Taille+Croiss , 
+  ECLc ~ COT + Taille + Renta+ Croiss +Année ,
+  ERSEc ~ EPI+EUR+Année 
+)
+```
+
+# Années 0/1 dans toutes les régressions 
+Pas d'intervention majeure des années, sauf exception.
+```{r}
+for(annee in 2016:2019){
+  for(frm in formules){
+    frm <- paste(frm,'+An', annee, sep='')
+    f <- formula(frm)
+    cat('-----------------------------------------\n')
+    cat('Regression : ');print(f)
+    reg <- lm(formula = f, data=X.all)
+    print(cbind(
+            round(summary(reg)$coefficients[,c(1,4)],4), 
+            star = star(summary(reg)$coefficients[,c(4)])
+      ), quote=FALSE
+    )
+    cat('adj.r.squared = ',broom::glance(reg)[[2]],'     p.value = ',broom::glance(reg)[[4]], '\n')
+  }
+}
+```
+# Régressions Simples
+```{r}
+names(X)
+```
+
+# Toutes les régressions dans une boucle automatisée
+Les Années ne figurent pas en variable explicative dans ce script.
+```{r}
+for(y in c('CDP','ECLc','GRI','ERSEc')){
+  f <- formula(paste(y,'~FEF*CEF+EPI+COT+Taille+Croiss+Renta+EUR'))
+  cat('-----------------------------------------\n')
+  cat('Regression : ');print(f)
+  reg <- lm(formula = f, data=X)
+  print(cbind(summary(reg)$coefficients[,c(1,4)],
+              star=star(summary(reg)$coefficients[,c(4)])
+              ), quote=FALSE
+  )
+  cat('adj.r.squared = ',broom::glance(reg)[[2]],'     p.value = ',broom::glance(reg)[['p.value']], '\n')
+  #plot(reg)
+}
+```
+
+ 
